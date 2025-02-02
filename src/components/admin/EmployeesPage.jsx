@@ -1,6 +1,7 @@
 // EmployeesPage.jsx
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
 import './AdminPage.css';
 import './EmployeeCards.css';
 
@@ -8,43 +9,71 @@ const EmployeesPage = () => {
     const [isSidebarOpen, setSidebarOpen] = useState(true);
     const [showUserCard, setShowUserCard] = useState(false);
     const [showAddModal, setShowAddModal] = useState(false);
+    const [employees, setEmployees] = useState([]);
+    const [availableRoles, setAvailableRoles] = useState([]);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState(null);
     const [newUser, setNewUser] = useState({
-        imageUrl: '',
-        name: '',
-        role: '',
-        uid: '',
-        password: ''
+        userEmail: '',
+        userPassword: '',
+        userFirstName: '',
+        userLastName: '',
+        userPhoneNo: '',
+        allRolesId: []
     });
     
     const navigate = useNavigate();
     const email = localStorage.getItem('email');
     const roles = JSON.parse(localStorage.getItem('roles') || '[]');
 
-    // Sample employee data
-    const employeesData = [
-        {
-            id: 1,
-            name: 'John Smith',
-            uid: 'EMP001',
-            role: 'Developer',
-            image: 'https://randomuser.me/api/portraits/men/1.jpg'
-        },
-        {
-            id: 2,
-            name: 'Sarah Johnson',
-            uid: 'EMP002',
-            role: 'Designer',
-            image: 'https://randomuser.me/api/portraits/women/1.jpg'
-        },
-        {
-            id: 3,
-            name: 'Michael Brown',
-            uid: 'EMP003',
-            role: 'Manager',
-            image: 'https://randomuser.me/api/portraits/men/2.jpg'
-        },
-        // Add more sample employees as needed
-    ];
+    const fetchAvailableRoles = async () => {
+        try {
+            const response = await axios.get('http://localhost:8060/api/user-roles');
+            setAvailableRoles(response.data);
+        } catch (error) {
+            console.error('Error fetching roles:', error);
+            setError('Failed to fetch roles');
+        }
+    };
+
+    const fetchEmployees = async () => {
+        setLoading(true);
+        try {
+            const usersResponse = await axios.get('http://localhost:8060/api/users');
+            const users = usersResponse.data;
+
+            const employeesWithRoles = await Promise.all(
+                users.map(async (user) => {
+                    try {
+                        const rolesResponse = await axios.get(`http://localhost:8060/api/user-roles/${user.userId}`);
+                        return {
+                            ...user,
+                            roles: rolesResponse.data
+                        };
+                    } catch (error) {
+                        console.error(`Error fetching roles for user ${user.userId}:`, error);
+                        return {
+                            ...user,
+                            roles: []
+                        };
+                    }
+                })
+            );
+
+            setEmployees(employeesWithRoles);
+            setError(null);
+        } catch (err) {
+            setError('Failed to fetch employees data');
+            console.error('Error fetching data:', err);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchEmployees();
+        fetchAvailableRoles();
+    }, []);
 
     const generatePassword = () => {
         const length = 12;
@@ -53,28 +82,34 @@ const EmployeesPage = () => {
         for (let i = 0; i < length; i++) {
             password += charset.charAt(Math.floor(Math.random() * charset.length));
         }
-        setNewUser({ ...newUser, password });
+        setNewUser({ ...newUser, userPassword: password });
     };
 
-    const handleCreateUser = () => {
-        // Here you would typically make an API call to create the user
-        console.log('Creating new user:', newUser);
-        setShowAddModal(false);
-        setNewUser({
-            imageUrl: '',
-            name: '',
-            role: '',
-            uid: '',
-            password: ''
-        });
-    };
-
-    const userDetails = {
-        name: "Joy Smith",
-        age: 32,
-        phone: "+1 234 567 8900",
-        id: "AD123456",
-        role: roles[0]
+    const handleCreateUser = async () => {
+        try {
+            setLoading(true);
+            const response = await axios.post('http://localhost:8060/api/users/register', newUser);
+            console.log('User created successfully:', response.data);
+            
+            await fetchEmployees();
+            
+            setShowAddModal(false);
+            setNewUser({
+                userEmail: '',
+                userPassword: '',
+                userFirstName: '',
+                userLastName: '',
+                userPhoneNo: '',
+                allRolesId: []
+            });
+            
+            setError(null);
+        } catch (err) {
+            setError('Failed to create user');
+            console.error('Error creating user:', err);
+        } finally {
+            setLoading(false);
+        }
     };
 
     const handleLogout = () => {
@@ -105,7 +140,6 @@ const EmployeesPage = () => {
                     {isSidebarOpen ? '◀' : '▶'}
                 </button>
 
-                {/* Profile Section */}
                 <div className="profile-section">
                     <div 
                         className="profile-image"
@@ -121,7 +155,6 @@ const EmployeesPage = () => {
                     )}
                 </div>
 
-                {/* Navigation Items */}
                 <nav className="nav-menu">
                     {navItems.map((item, index) => (
                         <button
@@ -136,9 +169,7 @@ const EmployeesPage = () => {
                 </nav>
             </div>
 
-            {/* Main Content */}
             <div className={`main-content ${isSidebarOpen ? 'sidebar-open' : ''}`}>
-                {/* Header */}
                 <header className="dashboard-header">
                     <h1>Employees Management</h1>
                     <button onClick={handleLogout} className="logout-button">
@@ -146,23 +177,42 @@ const EmployeesPage = () => {
                     </button>
                 </header>
 
-                {/* Employee Cards Grid */}
+                {error && (
+                    <div className="error-message">
+                        {error}
+                    </div>
+                )}
+
+                {loading && (
+                    <div className="loading-message">
+                        Loading...
+                    </div>
+                )}
+
                 <div className="employee-grid">
-                    {employeesData.map((employee) => (
-                        <div key={employee.id} className="employee-card">
+                    {employees.map((employee) => (
+                        <div key={employee.userId} className="employee-card">
                             <img 
-                                src={employee.image} 
-                                alt={employee.name}
+                                src="/api/placeholder/150/150"
+                                alt={employee.userFirstName}
                                 className="employee-image"
                             />
-                            <div className="employee-name">{employee.name}</div>
-                            <div className="employee-uid">{employee.uid}</div>
-                            <div className="employee-role">{employee.role}</div>
+                            <div className="employee-name">
+                                {employee.userFirstName} {employee.userLastName}
+                            </div>
+                            <div className="employee-uid">ID: {employee.userId}</div>
+                            <div className="employee-email">{employee.userEmail}</div>
+                            <div className="employee-roles">
+                                {employee.roles.map((role, index) => (
+                                    <span key={index} className="role-badge">
+                                        {role}
+                                    </span>
+                                ))}
+                            </div>
                         </div>
                     ))}
                 </div>
 
-                {/* Add Employee Button */}
                 <button 
                     className="add-employee-button"
                     onClick={() => setShowAddModal(true)}
@@ -171,78 +221,75 @@ const EmployeesPage = () => {
                 </button>
             </div>
 
-            {/* User Details Modal */}
-            {showUserCard && (
-                <div className="modal-overlay">
-                    <div className="modal-content">
-                        <div className="modal-header">
-                            <h2>User Details</h2>
-                            <button 
-                                onClick={() => setShowUserCard(false)}
-                                className="close-button"
-                            >
-                                ✕
-                            </button>
-                        </div>
-                        <div className="modal-body">
-                            <p><strong>Name:</strong> {userDetails.name}</p>
-                            <p><strong>Age:</strong> {userDetails.age}</p>
-                            <p><strong>Phone:</strong> {userDetails.phone}</p>
-                            <p><strong>ID:</strong> {userDetails.id}</p>
-                            <p><strong>Role:</strong> {userDetails.role}</p>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Add User Modal */}
             {showAddModal && (
                 <div className="modal-overlay">
                     <div className="add-user-modal">
                         <h2 className="modal-title">Add New User</h2>
                         <div className="form-group">
-                            <label>Profile Picture URL</label>
+                            <label>Email</label>
                             <input
-                                type="text"
-                                value={newUser.imageUrl}
-                                onChange={(e) => setNewUser({ ...newUser, imageUrl: e.target.value })}
-                                placeholder="Enter image URL"
+                                type="email"
+                                value={newUser.userEmail}
+                                onChange={(e) => setNewUser({ ...newUser, userEmail: e.target.value })}
+                                placeholder="Enter email"
                             />
                         </div>
                         <div className="form-group">
-                            <label>Username</label>
+                            <label>First Name</label>
                             <input
                                 type="text"
-                                value={newUser.name}
-                                onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
-                                placeholder="Enter username"
+                                value={newUser.userFirstName}
+                                onChange={(e) => setNewUser({ ...newUser, userFirstName: e.target.value })}
+                                placeholder="Enter first name"
                             />
                         </div>
                         <div className="form-group">
-                            <label>User Role</label>
+                            <label>Last Name</label>
                             <input
                                 type="text"
-                                value={newUser.role}
-                                onChange={(e) => setNewUser({ ...newUser, role: e.target.value })}
-                                placeholder="Enter user role"
+                                value={newUser.userLastName}
+                                onChange={(e) => setNewUser({ ...newUser, userLastName: e.target.value })}
+                                placeholder="Enter last name"
                             />
                         </div>
                         <div className="form-group">
-                            <label>User ID</label>
+                            <label>Phone Number</label>
                             <input
                                 type="text"
-                                value={newUser.uid}
-                                onChange={(e) => setNewUser({ ...newUser, uid: e.target.value })}
-                                placeholder="Create user ID"
+                                value={newUser.userPhoneNo}
+                                onChange={(e) => setNewUser({ ...newUser, userPhoneNo: e.target.value })}
+                                placeholder="Enter phone number"
                             />
+                        </div>
+                        <div className="form-group">
+                            <label>Role</label>
+                            <select
+                                multiple
+                                value={newUser.allRolesId}
+                                onChange={(e) => {
+                                    const selectedRoles = Array.from(
+                                        e.target.selectedOptions, 
+                                        option => parseInt(option.value)
+                                    );
+                                    setNewUser({ ...newUser, allRolesId: selectedRoles });
+                                }}
+                                className="role-select"
+                            >
+                                {availableRoles.map((role) => (
+                                    <option key={role.roleId} value={role.roleId}>
+                                        {role.roleName}
+                                    </option>
+                                ))}
+                            </select>
+                            <small className="help-text">Hold Ctrl/Cmd to select multiple roles</small>
                         </div>
                         <div className="form-group">
                             <label>Password</label>
                             <div className="password-input-group">
                                 <input
                                     type="text"
-                                    value={newUser.password}
-                                    onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
+                                    value={newUser.userPassword}
+                                    onChange={(e) => setNewUser({ ...newUser, userPassword: e.target.value })}
                                     placeholder="Enter password"
                                 />
                                 <button 
@@ -263,8 +310,9 @@ const EmployeesPage = () => {
                             <button 
                                 className="create-button"
                                 onClick={handleCreateUser}
+                                disabled={loading}
                             >
-                                Create User
+                                {loading ? 'Creating...' : 'Create User'}
                             </button>
                         </div>
                     </div>

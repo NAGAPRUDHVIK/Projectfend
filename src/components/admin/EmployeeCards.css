@@ -34,7 +34,20 @@
     margin-bottom: 4px;
 }
 
-.employee-role {
+.employee-email {
+    font-size: 0.9rem;
+    color: #666;
+    margin-bottom: 8px;
+}
+
+.employee-roles {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    justify-content: center;
+}
+
+.role-badge {
     font-size: 0.9rem;
     color: #444;
     background-color: #f3f4f6;
@@ -77,6 +90,8 @@
     max-width: 500px;
     z-index: 1000;
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    max-height: 90vh;
+    overflow-y: auto;
 }
 
 .modal-overlay {
@@ -99,12 +114,30 @@
     font-weight: 500;
 }
 
-.form-group input {
+.form-group input, 
+.form-group select {
     width: 100%;
     padding: 8px 12px;
     border: 1px solid #ddd;
     border-radius: 4px;
     font-size: 14px;
+}
+
+.role-select {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    margin-top: 4px;
+    min-height: 100px;
+    background-color: white;
+}
+
+.help-text {
+    color: #666;
+    font-size: 12px;
+    margin-top: 4px;
+    display: block;
 }
 
 .password-input-group {
@@ -152,8 +185,53 @@
     background-color: #333;
 }
 
+.create-button:disabled {
+    background-color: #666;
+    cursor: not-allowed;
+}
+
 .modal-title {
     margin-bottom: 20px;
     font-size: 1.25rem;
     font-weight: 600;
+}
+
+.error-message {
+    background-color: #fee2e2;
+    color: #dc2626;
+    padding: 12px;
+    border-radius: 4px;
+    margin-bottom: 16px;
+    text-align: center;
+}
+
+.loading-message {
+    text-align: center;
+    padding: 20px;
+    color: #666;
+    font-size: 14px;
+}
+
+@media (max-width: 1600px) {
+    .employee-grid {
+        grid-template-columns: repeat(4, 1fr);
+    }
+}
+
+@media (max-width: 1200px) {
+    .employee-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+@media (max-width: 768px) {
+    .employee-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 480px) {
+    .employee-grid {
+        grid-template-columns: 1fr;
+    }
 }
