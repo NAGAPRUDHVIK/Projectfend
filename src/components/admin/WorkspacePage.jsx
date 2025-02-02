@@ -1,5 +1,4 @@
-// WorkspacePage.jsx
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import './AdminPage.css';
 import './WorkspaceTable.css';
@@ -10,54 +9,54 @@ const WorkspacePage = () => {
     const [showAddModal, setShowAddModal] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [currentPage, setCurrentPage] = useState(1);
+    const [workspaceBookings, setWorkspaceBookings] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const [selectedBooking, setSelectedBooking] = useState(null);
+    const [showDetailsModal, setShowDetailsModal] = useState(false);
     const itemsPerPage = 5;
-    
-    const [newWorkspace, setNewWorkspace] = useState({
-        monitor: '',
-        whiteboard: '',
-        building: '',
-        floor: '',
-        workstationNumber: ''
-    });
 
     const navigate = useNavigate();
     const email = localStorage.getItem('email');
     const roles = JSON.parse(localStorage.getItem('roles') || '[]');
 
-    // Sample workspace data
-    const workspaceData = [
-        { bid: 1, name: 'Ram Kumar', uid: '29038', workstation: 'AS-01', duration: '09:00-17:00' },
-        { bid: 2, name: 'Sarah Johnson', uid: '29039', workstation: 'AS-02', duration: '10:00-18:00' },
-        { bid: 3, name: 'Alex Chen', uid: '29040', workstation: 'AS-03', duration: '08:00-16:00' },
-        { bid: 4, name: 'Maria Garcia', uid: '29041', workstation: 'AS-04', duration: '09:30-17:30' },
-        { bid: 5, name: 'John Smith', uid: '29042', workstation: 'AS-05', duration: '08:30-16:30' },
-        { bid: 6, name: 'Emma Wilson', uid: '29043', workstation: 'AS-06', duration: '10:30-18:30' },
-        { bid: 7, name: 'David Lee', uid: '29044', workstation: 'AS-07', duration: '07:00-15:00' },
-        { bid: 8, name: 'Lisa Brown', uid: '29045', workstation: 'AS-08', duration: '11:00-19:00' },
-        { bid: 9, name: 'James Taylor', uid: '29046', workstation: 'AS-09', duration: '09:00-17:00' },
-        { bid: 10, name: 'Anna Kim', uid: '29047', workstation: 'AS-10', duration: '08:00-16:00' }
-    ];
-
-    const handleCreateWorkspace = () => {
-        // Here you would typically make an API call to create the workspace
-        console.log('Creating new workspace:', newWorkspace);
-        setShowAddModal(false);
-        setNewWorkspace({
-            monitor: '',
-            whiteboard: '',
-            building: '',
-            floor: '',
-            workstationNumber: ''
-        });
+    // Fetch all workspace bookings
+    const fetchWorkspaceBookings = async () => {
+        try {
+            setLoading(true);
+            const response = await fetch('http://localhost:8060/api/workspace-bookings');
+            if (!response.ok) {
+                throw new Error('Failed to fetch workspace bookings');
+            }
+            const data = await response.json();
+            setWorkspaceBookings(data);
+        } catch (err) {
+            setError(err.message);
+            setWorkspaceBookings([]);
+        } finally {
+            setLoading(false);
+        }
     };
 
-    const userDetails = {
-        name: "Joy Smith",
-        age: 32,
-        phone: "+1 234 567 8900",
-        id: "AD123456",
-        role: roles[0]
+    // Fetch single booking details
+    const handleViewBooking = async (bookingId) => {
+        try {
+            const response = await fetch(`http://localhost:8060/api/workspace-bookings/${bookingId}`);
+            if (!response.ok) {
+                throw new Error('Failed to fetch booking details');
+            }
+            const detailData = await response.json();
+            setSelectedBooking(detailData);
+            setShowDetailsModal(true);
+        } catch (err) {
+            setError(err.message);
+        }
     };
+
+    // Fetch data when component mounts
+    useEffect(() => {
+        fetchWorkspaceBookings();
+    }, []);
 
     const handleLogout = () => {
         localStorage.clear();
@@ -80,18 +79,39 @@ const WorkspacePage = () => {
         { icon: '📍', label: 'Venue', path: 'venue' }
     ];
 
+    const userDetails = {
+        name: "Joy Smith",
+        age: 32,
+        phone: "+1 234 567 8900",
+        id: "AD123456",
+        role: roles[0]
+    };
+
     // Filter data based on search term
-    const filteredData = workspaceData.filter(item =>
-        item.bid.toString().includes(searchTerm) ||
-        item.uid.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.workstation.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    const filteredData = workspaceBookings.filter(booking => {
+        const bookingId = booking?.wbookingId?.toString() || '';
+        const userId = booking?.userId?.toString() || '';
+        const workspaceId = booking?.workspaceId?.toString() || '';
+        const searchLower = searchTerm.toLowerCase();
+
+        return bookingId.includes(searchTerm) ||
+               userId.includes(searchTerm) ||
+               workspaceId.includes(searchTerm);
+    });
 
     // Calculate pagination
     const totalPages = Math.ceil(filteredData.length / itemsPerPage);
     const startIndex = (currentPage - 1) * itemsPerPage;
     const endIndex = startIndex + itemsPerPage;
     const currentData = filteredData.slice(startIndex, endIndex);
+
+    if (loading) {
+        return <div className="loading">Loading workspace bookings...</div>;
+    }
+
+    if (error) {
+        return <div className="error">Error: {error}</div>;
+    }
 
     return (
         <div className="dashboard-container">
@@ -137,7 +157,6 @@ const WorkspacePage = () => {
 
             {/* Main Content */}
             <div className={`main-content ${isSidebarOpen ? 'sidebar-open' : ''}`}>
-                {/* Header */}
                 <header className="dashboard-header">
                     <h1>Workspace Management</h1>
                     <button onClick={handleLogout} className="logout-button">
@@ -145,13 +164,12 @@ const WorkspacePage = () => {
                     </button>
                 </header>
 
-                {/* Workspace Table */}
                 <div className="workspace-table-container">
                     <div className="table-header">
                         <div className="search-container">
                             <input
                                 type="text"
-                                placeholder="Search by BID, UID, or Workstation..."
+                                placeholder="Search by Booking ID, User ID, or Workspace ID..."
                                 className="search-input"
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -165,21 +183,30 @@ const WorkspacePage = () => {
                     <table className="workspace-table">
                         <thead>
                             <tr>
-                                <th>BID</th>
-                                <th>Name</th>
-                                <th>UID</th>
-                                <th>Workstation</th>
+                                <th>Booking ID</th>
+                                <th>User ID</th>
+                                <th>Workspace ID</th>
                                 <th>Duration</th>
+                                <th>Date</th>
+                                <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {currentData.map((item) => (
-                                <tr key={item.bid}>
-                                    <td>{item.bid}</td>
-                                    <td>{item.name}</td>
-                                    <td>{item.uid}</td>
-                                    <td>{item.workstation}</td>
-                                    <td>{item.duration}</td>
+                            {currentData.map((booking) => (
+                                <tr key={booking.wbookingId}>
+                                    <td>{booking.wbookingId}</td>
+                                    <td>{booking.userId}</td>
+                                    <td>{booking.workspaceId}</td>
+                                    <td>{`${booking.wstartTime || 'N/A'}-${booking.wendTime || 'N/A'}`}</td>
+                                    <td>{booking.workspaceBookingDate || 'N/A'}</td>
+                                    <td>
+                                        <button 
+                                            onClick={() => handleViewBooking(booking.wbookingId)}
+                                            className="view-button"
+                                        >
+                                            View
+                                        </button>
+                                    </td>
                                 </tr>
                             ))}
                         </tbody>
@@ -201,15 +228,33 @@ const WorkspacePage = () => {
                         </button>
                     </div>
                 </div>
-
-                {/* Add Workspace Button */}
-                <button 
-                    className="add-button"
-                    onClick={() => setShowAddModal(true)}
-                >
-                    +
-                </button>
             </div>
+
+            {/* Booking Details Modal */}
+            {showDetailsModal && selectedBooking && (
+                <div className="modal-overlay">
+                    <div className="modal-content">
+                        <div className="modal-header">
+                            <h2>Booking Details</h2>
+                            <button 
+                                onClick={() => setShowDetailsModal(false)}
+                                className="close-button"
+                            >
+                                ✕
+                            </button>
+                        </div>
+                        <div className="modal-body">
+                            <p><strong>Booking ID:</strong> {selectedBooking.wbookingId}</p>
+                            <p><strong>Booking Date:</strong> {selectedBooking.workspaceBookingDate}</p>
+                            <p><strong>Start Time:</strong> {selectedBooking.wstartTime}</p>
+                            <p><strong>End Time:</strong> {selectedBooking.wendTime}</p>
+                            <p><strong>User Name:</strong> {selectedBooking.user?.userFirstName}</p>
+                            <p><strong>User Email:</strong> {selectedBooking.user?.userEmail}</p>
+                            <p><strong>Seat Number:</strong> {selectedBooking.workspace?.seatNumber}</p>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* User Details Modal */}
             {showUserCard && (
@@ -225,91 +270,11 @@ const WorkspacePage = () => {
                             </button>
                         </div>
                         <div className="modal-body">
-                            
                             <p><strong>Name:</strong> {userDetails.name}</p>
                             <p><strong>Age:</strong> {userDetails.age}</p>
                             <p><strong>Phone:</strong> {userDetails.phone}</p>
                             <p><strong>ID:</strong> {userDetails.id}</p>
                             <p><strong>Role:</strong> {userDetails.role}</p>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Add Workspace Modal */}
-            {showAddModal && (
-                <div className="modal-overlay">
-                    <div className="add-modal">
-                        <h2 className="modal-title">Add New Workspace</h2>
-                        <div className="form-group">
-                            <label>Has Monitor?</label>
-                            <select
-                                value={newWorkspace.monitor}
-                                onChange={(e) => setNewWorkspace({ ...newWorkspace, monitor: e.target.value })}
-                            >
-                                <option value="">Select</option>
-                                <option value="Yes">Yes</option>
-                                <option value="No">No</option>
-                            </select>
-                        </div>
-                        <div className="form-group">
-                            <label>Has Whiteboard?</label>
-                            <select
-                                value={newWorkspace.whiteboard}
-                                onChange={(e) => setNewWorkspace({ ...newWorkspace, whiteboard: e.target.value })}
-                            >
-                                <option value="">Select</option>
-                                <option value="Yes">Yes</option>
-                                <option value="No">No</option>
-                            </select>
-                        </div>
-                        <div className="form-group">
-                            <label>Building</label>
-                            <select
-                                value={newWorkspace.building}
-                                onChange={(e) => setNewWorkspace({ ...newWorkspace, building: e.target.value })}
-                            >
-                                <option value="">Select</option>
-                                <option value="A">A</option>
-                                <option value="B">B</option>
-                                <option value="C">C</option>
-                            </select>
-                        </div>
-                        <div className="form-group">
-                            <label>Floor</label>
-                            <select
-                                value={newWorkspace.floor}
-                                onChange={(e) => setNewWorkspace({ ...newWorkspace, floor: e.target.value })}
-                            >
-                                <option value="">Select</option>
-                                <option value="Ground">Ground</option>
-                                <option value="Floor1">Floor 1</option>
-                                <option value="Floor2">Floor 2</option>
-                                <option value="Floor3">Floor 3</option>
-                            </select>
-                        </div>
-                        <div className="form-group">
-                            <label>Workstation Number</label>
-                            <input
-                                type="text"
-                                value={newWorkspace.workstationNumber}
-                                onChange={(e) => setNewWorkspace({ ...newWorkspace, workstationNumber: e.target.value })}
-                                placeholder="Enter workstation number"
-                            />
-                        </div>
-                        <div className="modal-buttons">
-                            <button 
-                                className="cancel-button"
-                                onClick={() => setShowAddModal(false)}
-                            >
-                                Cancel
-                            </button>
-                            <button 
-                                className="create-button"
-                                onClick={handleCreateWorkspace}
-                            >
-                                Create Workspace
-                            </button>
                         </div>
                     </div>
                 </div>
