@@ -47,7 +47,7 @@ const AdminPage = () => {
         { icon: '🚗', label: 'Parking', path: 'parking' },
         { icon: '🏢', label: 'Workspace', path: 'workspace' },
         { icon: '📍', label: 'Venue', path: 'venue' },
-        { icon: '💬', label: 'Feedback', path: 'feedback' }
+        // { icon: '💬', label: 'Feedback', path: 'feedback' }
     ];
 
     return (

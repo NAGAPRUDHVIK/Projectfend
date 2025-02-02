@@ -1,164 +1,325 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
+import './VenueStyles.css';
 
-const VenueComponent = () => {
+const VenueBookingComponent = () => {
+    const [venues, setVenues] = useState([]);
+    const [bookings, setBookings] = useState([]);
     const [selectedVenue, setSelectedVenue] = useState(null);
-    const [showBookingModal, setShowBookingModal] = useState(false);
+    const [error, setError] = useState('');
+    const [loading, setLoading] = useState(false);
+    const [showVenues, setShowVenues] = useState(false);
+    const [stats, setStats] = useState({
+        totalVenues: 0,
+        availableVenues: 0,
+        bookedVenues: 0
+    });
 
-    const venueData = {
-        totalVenues: 20,
-        availableVenues: 8,
-        myBookings: [],
-        venues: [
-            { 
-                id: 1, 
-                name: "Conference Room A",
-                capacity: 20,
-                amenities: ["Projector", "Video Conference", "Whiteboard"],
-                status: "available"
-            },
-            { 
-                id: 2, 
-                name: "Meeting Room B",
-                capacity: 10,
-                amenities: ["TV Screen", "Video Conference"],
-                status: "available"
-            },
-            { 
-                id: 3, 
-                name: "Auditorium",
-                capacity: 100,
-                amenities: ["Stage", "Audio System", "Projector"],
-                status: "occupied"
-            }
-        ]
+    const [formData, setFormData] = useState({
+        date: new Date().toISOString().split('T')[0],
+        startTime: '',
+        endTime: '',
+        attendees: '',
+        purpose: '',
+        hasAc: false,
+        hasProjector: false
+    });
+
+    useEffect(() => {
+        // Initial data load
+        fetchInitialData();
+
+        // Set up polling for updates every 30 seconds
+        const interval = setInterval(fetchInitialData, 30000);
+        return () => clearInterval(interval);
+    }, []);
+
+    const fetchInitialData = async () => {
+        try {
+            const [venuesResponse, bookingsResponse] = await Promise.all([
+                axios.get('http://localhost:8060/api/venues'),
+                axios.get('http://localhost:8060/api/venue-bookings')
+            ]);
+
+            const currentBookings = bookingsResponse.data;
+            const allVenues = venuesResponse.data;
+
+            // Update venue availability based on current bookings
+            const updatedVenues = allVenues.map(venue => {
+                const isBooked = currentBookings.some(booking => 
+                    booking.venueId === venue.venueId &&
+                    booking.venueBookingDate === formData.date &&
+                    isTimeOverlapping(booking.startTime, booking.endTime, formData.startTime, formData.endTime)
+                );
+                return { ...venue, isBooked };
+            });
+
+            setVenues(updatedVenues);
+            setBookings(currentBookings);
+
+            const availableCount = updatedVenues.filter(v => !v.isBooked).length;
+            setStats({
+                totalVenues: updatedVenues.length,
+                availableVenues: availableCount,
+                bookedVenues: updatedVenues.length - availableCount
+            });
+        } catch (error) {
+            setError('Failed to fetch venues data');
+        }
     };
 
-    const handleBooking = () => {
-        // Handle booking logic
-        setShowBookingModal(true);
+    const isTimeOverlapping = (start1, end1, start2, end2) => {
+        return start1 < end2 && end1 > start2;
+    };
+
+    const handleSearch = async () => {
+        if (!formData.date || !formData.startTime || !formData.endTime) {
+            setError('Please select date and time');
+            return;
+        }
+
+        setLoading(true);
+        try {
+            const [venuesResponse, bookingsResponse] = await Promise.all([
+                axios.get('http://localhost:8060/api/venues'),
+                axios.get('http://localhost:8060/api/venue-bookings')
+            ]);
+
+            const currentBookings = bookingsResponse.data.filter(booking =>
+                booking.venueBookingDate === formData.date
+            );
+
+            const filteredVenues = venuesResponse.data.map(venue => {
+                const isBooked = currentBookings.some(booking =>
+                    booking.venueId === venue.venueId &&
+                    isTimeOverlapping(booking.startTime, booking.endTime, formData.startTime, formData.endTime)
+                );
+
+                const meetsRequirements = 
+                    (!formData.hasAc || venue.hasAc) &&
+                    (!formData.hasProjector || venue.hasProjector) &&
+                    (!formData.attendees || venue.venueCapacity >= parseInt(formData.attendees));
+
+                return {
+                    ...venue,
+                    isBooked,
+                    isAvailable: !isBooked && meetsRequirements
+                };
+            });
+
+            setVenues(filteredVenues);
+            setShowVenues(true);
+            setError('');
+        } catch (error) {
+            setError('Failed to fetch venue data');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleVenueClick = (venue) => {
+        if (!venue.isAvailable) {
+            const element = document.getElementById(`venue-${venue.venueId}`);
+            element?.classList.add('vibrate');
+            setTimeout(() => element?.classList.remove('vibrate'), 500);
+            setError('This venue is not available for the selected time');
+            return;
+        }
+        setSelectedVenue(venue);
+        setError('');
+    };
+
+    const handleBooking = async () => {
+        if (!selectedVenue) return;
+
+        try {
+            const bookingData = {
+                userId: 1, // Replace with actual logged in user ID
+                venueId: selectedVenue.venueId,
+                venueBookingDate: formData.date,
+                startTime: formData.startTime,
+                endTime: formData.endTime
+            };
+
+            await axios.post('http://localhost:8060/api/venue-bookings', bookingData);
+
+            // Update local state
+            const updatedVenues = venues.map(venue =>
+                venue.venueId === selectedVenue.venueId
+                    ? { ...venue, isBooked: true, isAvailable: false }
+                    : venue
+            );
+            setVenues(updatedVenues);
+
+            // Update stats
+            setStats(prev => ({
+                ...prev,
+                availableVenues: prev.availableVenues - 1,
+                bookedVenues: prev.bookedVenues + 1
+            }));
+
+            setError('Booking successful!');
+            setSelectedVenue(null);
+            fetchInitialData(); // Refresh all data
+        } catch (error) {
+            setError('Failed to book venue');
+        }
     };
 
     return (
-        <main className="dashboard-main">
-            <div className="stats-grid">
-                <div className="stat-card">
-                    <h3>Total Venues</h3>
-                    <p>{venueData.totalVenues}</p>
+        <div className="venue-layout-container">
+            <div className="booking-header">
+                <h1>Venue Booking System</h1>
+                {error && (
+                    <div className={`alert ${error.includes('successful') ? 'alert-success' : 'alert-error'}`}>
+                        {error}
+                    </div>
+                )}
+            </div>
+
+            {/* Statistics */}
+            <div className="stats-container">
+                <div className="stat-item">
+                    <div className="stat-icon">🏢</div>
+                    <span className="stat-label">Total Venues</span>
+                    <span className="stat-value">{stats.totalVenues}</span>
                 </div>
-                <div className="stat-card">
-                    <h3>Available Venues</h3>
-                    <p>{venueData.availableVenues}</p>
+                <div className="stat-item">
+                    <div className="stat-icon">✅</div>
+                    <span className="stat-label">Available</span>
+                    <span className="stat-value text-green-600">{stats.availableVenues}</span>
                 </div>
-                <div className="stat-card">
-                    <h3>Occupancy Rate</h3>
-                    <p>{Math.round((venueData.totalVenues - venueData.availableVenues) / venueData.totalVenues * 100)}%</p>
+                <div className="stat-item">
+                    <div className="stat-icon">🔒</div>
+                    <span className="stat-label">Booked</span>
+                    <span className="stat-value text-red-600">{stats.bookedVenues}</span>
                 </div>
             </div>
 
-            <div className="detailed-stats">
-                {/* Venue Listing */}
-                <div className="detail-card">
-                    <h3 className="text-xl font-semibold mb-4">Available Venues</h3>
-                    <div className="space-y-4">
-                        {venueData.venues.map(venue => (
-                            <div 
-                                key={venue.id} 
-                                className="p-4 border rounded-lg hover:border-black transition-colors cursor-pointer"
-                                onClick={() => setSelectedVenue(venue)}
-                            >
-                                <div className="flex justify-between items-center mb-2">
-                                    <h4 className="font-semibold">{venue.name}</h4>
-                                    <span className={`badge ${venue.status === 'available' ? 'bg-green-500' : 'bg-red-500'}`}>
-                                        {venue.status}
-                                    </span>
-                                </div>
-                                <p className="text-sm text-gray-600">Capacity: {venue.capacity} people</p>
-                                <div className="flex flex-wrap gap-2 mt-2">
-                                    {venue.amenities.map((amenity, index) => (
-                                        <span key={index} className="text-xs bg-gray-100 px-2 py-1 rounded">
-                                            {amenity}
-                                        </span>
-                                    ))}
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-
-                {/* Booking Form */}
-                <div className="detail-card">
-                    <h3 className="text-xl font-semibold mb-4">Book a Venue</h3>
-                    <div className="space-y-4">
-                        <select className="w-full p-2 border rounded">
-                            <option value="">Select Venue</option>
-                            {venueData.venues
-                                .filter(venue => venue.status === 'available')
-                                .map(venue => (
-                                    <option key={venue.id} value={venue.id}>
-                                        {venue.name} (Capacity: {venue.capacity})
-                                    </option>
-                                ))
-                            }
-                        </select>
-
+            {/* Search Form */}
+            <div className="booking-form">
+                <div className="form-grid">
+                    <div className="form-group">
+                        <label>Date</label>
                         <input
                             type="date"
-                            className="w-full p-2 border rounded"
+                            value={formData.date}
                             min={new Date().toISOString().split('T')[0]}
+                            onChange={(e) => setFormData({ ...formData, date: e.target.value })}
                         />
+                    </div>
 
-                        <div className="grid grid-cols-2 gap-4">
-                            <select className="w-full p-2 border rounded">
-                                <option value="">Start Time</option>
-                                <option value="09:00">09:00 AM</option>
-                                <option value="10:00">10:00 AM</option>
-                                <option value="11:00">11:00 AM</option>
-                                <option value="12:00">12:00 PM</option>
-                                <option value="13:00">01:00 PM</option>
-                                <option value="14:00">02:00 PM</option>
-                                <option value="15:00">03:00 PM</option>
-                                <option value="16:00">04:00 PM</option>
-                                <option value="17:00">05:00 PM</option>
-                            </select>
+                    <div className="form-group">
+                        <label>Start Time</label>
+                        <input
+                            type="time"
+                            value={formData.startTime}
+                            onChange={(e) => setFormData({ ...formData, startTime: e.target.value })}
+                        />
+                    </div>
 
-                            <select className="w-full p-2 border rounded">
-                                <option value="">End Time</option>
-                                <option value="10:00">10:00 AM</option>
-                                <option value="11:00">11:00 AM</option>
-                                <option value="12:00">12:00 PM</option>
-                                <option value="13:00">01:00 PM</option>
-                                <option value="14:00">02:00 PM</option>
-                                <option value="15:00">03:00 PM</option>
-                                <option value="16:00">04:00 PM</option>
-                                <option value="17:00">05:00 PM</option>
-                                <option value="18:00">06:00 PM</option>
-                            </select>
-                        </div>
+                    <div className="form-group">
+                        <label>End Time</label>
+                        <input
+                            type="time"
+                            value={formData.endTime}
+                            onChange={(e) => setFormData({ ...formData, endTime: e.target.value })}
+                        />
+                    </div>
 
-                        <textarea
-                            className="w-full p-2 border rounded"
-                            placeholder="Purpose of booking"
-                            rows="3"
-                        ></textarea>
-
+                    <div className="form-group">
+                        <label>Number of Attendees</label>
                         <input
                             type="number"
-                            className="w-full p-2 border rounded"
-                            placeholder="Number of attendees"
+                            value={formData.attendees}
+                            onChange={(e) => setFormData({ ...formData, attendees: e.target.value })}
                             min="1"
                         />
-
-                        <button 
-                            onClick={handleBooking}
-                            className="w-full bg-black text-white p-3 rounded-lg hover:bg-gray-800 transition-colors"
-                        >
-                            Request Booking
-                        </button>
                     </div>
+
+                    <div className="checkbox-group">
+                        <label>
+                            <input
+                                type="checkbox"
+                                checked={formData.hasAc}
+                                onChange={(e) => setFormData({ ...formData, hasAc: e.target.checked })}
+                            />
+                            AC Required
+                        </label>
+                        <label>
+                            <input
+                                type="checkbox"
+                                checked={formData.hasProjector}
+                                onChange={(e) => setFormData({ ...formData, hasProjector: e.target.checked })}
+                            />
+                            Projector Required
+                        </label>
+                    </div>
+
+                    <button 
+                        className={`search-button ${loading ? 'loading' : ''}`}
+                        onClick={handleSearch}
+                        disabled={loading}
+                    >
+                        {loading ? 'Searching...' : 'Search Available Venues'}
+                    </button>
                 </div>
             </div>
-        </main>
+
+            {/* Venues Display */}
+            {showVenues && (
+                <div className="venue-grid">
+                    {venues.map(venue => (
+                        <div
+                            key={venue.venueId}
+                            id={`venue-${venue.venueId}`}
+                            className={`venue-card ${
+                                venue.isBooked ? 'booked' : 
+                                venue.isAvailable ? 'available' : 'unavailable'
+                            } ${selectedVenue?.venueId === venue.venueId ? 'selected' : ''}`}
+                            onClick={() => handleVenueClick(venue)}
+                        >
+                            <div className="venue-header">
+                                <h3>{venue.venueName}</h3>
+                                <span className={`venue-status ${venue.isBooked ? 'booked' : 'available'}`}>
+                                    {venue.isBooked ? '🔴 Booked' : venue.isAvailable ? '🟢 Available' : '⚠️ Unsuitable'}
+                                </span>
+                            </div>
+                            
+                            <div className="venue-details">
+                                <p>
+                                    <span className="icon">📍</span>
+                                    {venue.venueBuilding} - {venue.venueFloor}
+                                </p>
+                                <p>
+                                    <span className="icon">👥</span>
+                                    Capacity: {venue.venueCapacity}
+                                </p>
+                                <div className="venue-features">
+                                    {venue.hasAc && <span className="feature">❄️ AC</span>}
+                                    {venue.hasProjector && <span className="feature">📽️ Projector</span>}
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {/* Booking Confirmation */}
+            {selectedVenue && (
+                <div className="booking-footer">
+                    <div className="selected-venue-info">
+                        <h3>Selected Venue: {selectedVenue.venueName}</h3>
+                        <p>{selectedVenue.venueBuilding} - {selectedVenue.venueFloor}</p>
+                        <p>Capacity: {selectedVenue.venueCapacity} people</p>
+                    </div>
+                    <button className="confirm-button" onClick={handleBooking}>
+                        Confirm Booking
+                    </button>
+                </div>
+            )}
+        </div>
     );
 };
 
-export default VenueComponent;
+export default VenueBookingComponent;
